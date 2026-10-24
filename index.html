@@ -1091,7 +1091,8 @@ const Kart = (function(){
 
   function freshKart(color, sOffset, lane){
     const p = pointAtS(sOffset);
-    return { x:p.x, y:p.y, angle:p.ang, speed:0, color, s:sOffset, prevS:sOffset, progress:0, lap:0, lane:lane||0,
+    const nx = Math.cos(p.ang+Math.PI/2), ny = Math.sin(p.ang+Math.PI/2);
+    return { x:p.x+nx*(lane||0), y:p.y+ny*(lane||0), angle:p.ang, speed:0, color, s:sOffset, prevS:sOffset, progress:0, lap:0, lane:lane||0,
       item:null, spinTimer:0, boostTimer:0, spinVisual:0 };
   }
 
@@ -1510,9 +1511,11 @@ const Kart = (function(){
     const timeStr = mm+':'+(ss.length<3?'0'+ss:ss);
     if(player2){
       const p1lap = Math.min(player.lap+1, LAPS), p2lap = Math.min(player2.lap+1, LAPS);
+      const p1Item = player.item ? ITEM_ICON[player.item] : '—';
+      const p2Item = player2.item ? ITEM_ICON[player2.item] : '—';
       setHud(
-        '<span>P1</span><span class="v">LAP '+p1lap+'/'+LAPS+' · '+placeStr(player)+'</span>',
-        '<span>P2</span><span class="v">LAP '+p2lap+'/'+LAPS+' · '+placeStr(player2)+'</span><span>TIME</span><span class="v">'+timeStr+'</span>'
+        '<span>P1</span><span class="v">LAP '+p1lap+'/'+LAPS+' '+placeStr(player)+'</span><span>ITEM</span><span class="v">'+p1Item+'</span>',
+        '<span>P2</span><span class="v">LAP '+p2lap+'/'+LAPS+' '+placeStr(player2)+'</span><span>ITEM</span><span class="v">'+p2Item+'</span>'
       );
     } else {
       const lap = Math.min(player.lap+1, LAPS);
