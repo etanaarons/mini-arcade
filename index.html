@@ -266,7 +266,7 @@
         <button class="cab-card" data-game="kart" style="--accent:#ffb84d; --rot:-1deg;">
           <span class="cab-icon">🏎️</span>
           <span class="cab-title">KART RACER</span>
-          <span class="cab-desc">Arrow keys or WASD, Space to use items. Three laps, two rivals, item boxes keep it chaotic.</span>
+          <span class="cab-desc">Solo vs bots or local 2-player, with selectable bot difficulty. Three laps, three racers, item boxes keep it chaotic.</span>
         </button>
         <button class="cab-card" data-game="platform" style="--accent:#b968f0; --rot:2deg;">
           <span class="cab-icon">🏃</span>
@@ -1063,13 +1063,25 @@ const Kart = (function(){
 
   const keys = {};
   window.addEventListener('keydown', e=>{
-    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Spacebar'].includes(e.key)) e.preventDefault();
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Spacebar','Shift'].includes(e.key)) e.preventDefault();
     keys[e.key]=true;
-    if((e.key===' '||e.key==='Spacebar') && state==='kart' && raceState==='racing') useItem(player);
+    if(state!=='kart' || raceState!=='racing') return;
+    if(e.key===' '||e.key==='Spacebar') useItem(player);
+    if(e.key==='Shift' && player2) useItem(player2);
   });
   window.addEventListener('keyup', e=>{ keys[e.key]=false; });
 
-  let player, ais, raceState, raceTime, countdown, finishPlace;
+  const maxSpeed=260, accel=220, brakeDecel=300, baseFriction=0.992;
+  const KART_DIFF = {
+    easy:   { speedMul:0.82, itemMin:1.0,  itemMax:2.4 },
+    medium: { speedMul:1.0,  itemMin:0.5,  itemMax:1.4 },
+    hard:   { speedMul:1.18, itemMin:0.15, itemMax:0.6 }
+  };
+  const BASE_AI_SPEED = 164;
+
+  let mode = '1p', difficulty = 'medium', matchState = 'setup';
+  let setupButtons = [];
+  let player, player2, ais, raceState, raceTime, countdown, finishPlace;
   let itemBoxes = [], shells = [], bananas = [];
   const LAPS = 3;
   const ITEM_TYPES = ['boost','shell','banana'];
@@ -1083,14 +1095,32 @@ const Kart = (function(){
       item:null, spinTimer:0, boostTimer:0, spinVisual:0 };
   }
 
-  function reset(){
+  function makeAI(color, sOffset, lane, diff){
+    return Object.assign(freshKart(color, sOffset, lane), {
+      isAI: true,
+      baseSpeed: BASE_AI_SPEED*diff.speedMul + (Math.random()*8-4),
+      seed: Math.random()*10,
+      itemDelay: diff.itemMin + Math.random()*(diff.itemMax-diff.itemMin),
+      diff
+    });
+  }
+
+  function startRace(m, diff){
+    mode = m; difficulty = diff;
+    matchState = 'playing';
     buildTrack();
+    const d = KART_DIFF[diff];
     player = freshKart('#ffb84d', 0, 0);
-    player.isPlayer = true;
-    ais = [
-      Object.assign(freshKart('#ff3d6e', -26, -20), { baseSpeed:168, seed:Math.random()*10, itemDelay:0.6+Math.random() }),
-      Object.assign(freshKart('#39e6c4', -52, 20), { baseSpeed:160, seed:Math.random()*10, itemDelay:0.6+Math.random() })
-    ];
+    if(mode==='2p'){
+      player2 = freshKart('#6fd6ff', -26, 18);
+      ais = [ makeAI('#ff3d6e', -52, -18, d) ];
+    } else {
+      player2 = null;
+      ais = [
+        makeAI('#ff3d6e', -26, -20, d),
+        makeAI('#39e6c4', -52, 20, d)
+      ];
+    }
     raceState='countdown'; countdown=3.3; raceTime=0; finishPlace=0;
     shells = []; bananas = [];
     itemBoxes = [];
@@ -1101,11 +1131,24 @@ const Kart = (function(){
     }
   }
 
+  function reset(){
+    matchState = 'setup';
+  }
+
+  function handleSetupClick(p){
+    for(const b of setupButtons){
+      if(p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h){ b.action(); return; }
+    }
+  }
+  function onDown(p){
+    if(matchState==='setup') handleSetupClick(p);
+  }
+
   function randomItem(){ return ITEM_TYPES[Math.floor(Math.random()*ITEM_TYPES.length)]; }
 
   function applySpin(k){
     k.spinTimer = 0.9;
-    if(k.isPlayer) k.speed *= 0.25;
+    if(!k.isAI) k.speed *= 0.25;
     beep(160,0.25,'sawtooth',0.08);
   }
 
@@ -1115,7 +1158,7 @@ const Kart = (function(){
     k.item = null;
     if(type==='boost'){
       k.boostTimer = 1.3;
-      if(k.isPlayer) k.speed = Math.max(k.speed, 260*1.1);
+      if(!k.isAI) k.speed = Math.max(k.speed, 260*1.1);
       beep(220,0.1,'square',0.08,0); beep(440,0.14,'square',0.09,0.07);
     } else if(type==='shell'){
       shells.push({ x:k.x+Math.cos(k.angle)*24, y:k.y+Math.sin(k.angle)*24, vx:Math.cos(k.angle)*520, vy:Math.sin(k.angle)*520, owner:k, life:2.2 });
@@ -1135,13 +1178,47 @@ const Kart = (function(){
     k.lap = Math.max(0, Math.floor(k.progress/totalLen));
   }
 
-  function allKarts(){ return [player, ...ais]; }
+  function allKarts(){ return player2 ? [player, player2, ...ais] : [player, ...ais]; }
 
   function rank(){
     return allKarts().slice().sort((a,b)=>b.progress-a.progress);
   }
 
+  function updateHumanKart(k, dt, up, down, left, right){
+    if(k.spinTimer>0){
+      k.spinTimer -= dt;
+      k.spinVisual += dt*22;
+      k.speed *= Math.pow(0.9, dt*60);
+    } else {
+      if(up) k.speed += accel*dt;
+      else if(down) k.speed -= brakeDecel*dt;
+      else k.speed *= Math.pow(baseFriction, dt*60);
+
+      const targetTurnRate = 1.8 * clamp(Math.abs(k.speed)/maxSpeed, 0.55, 1) * (k.speed<0?-1:1);
+      let steerInput = 0;
+      if(left) steerInput -= 1;
+      if(right) steerInput += 1;
+      k.angle += targetTurnRate*steerInput*dt;
+    }
+    if(k.boostTimer>0) k.boostTimer -= dt;
+
+    const { d:offDist } = nearestS(k.x,k.y);
+    const offtrack = offDist > trackWidth/2;
+    const boosted = k.boostTimer>0;
+    const curMax = boosted? maxSpeed*1.5 : (offtrack? maxSpeed*0.65 : maxSpeed);
+    if(offtrack && !boosted) k.speed *= Math.pow(0.94, dt*60);
+    if(boosted) k.speed += accel*1.6*dt;
+    k.speed = clamp(k.speed, -maxSpeed*0.5, curMax);
+
+    k.x += Math.cos(k.angle)*k.speed*dt;
+    k.y += Math.sin(k.angle)*k.speed*dt;
+
+    const { s } = nearestS(k.x,k.y);
+    updateProgress(k, s);
+  }
+
   function update(dt){
+    if(matchState==='setup') return;
     if(raceState==='countdown'){
       countdown -= dt;
       if(countdown<=2 && countdown>1.9) beep(440,0.1,'square',0.06);
@@ -1151,39 +1228,19 @@ const Kart = (function(){
     }
     if(raceState==='racing') raceTime += dt;
 
-    // player physics
-    const maxSpeed=260, accel=220, brakeDecel=300, baseFriction=0.992;
+    // human players -- in 1-player mode arrows and WASD both drive player 1;
+    // in 2-player mode they're split: player 1 = arrows, player 2 = WASD
     if(raceState==='racing'){
-      if(player.spinTimer>0){
-        player.spinTimer -= dt;
-        player.spinVisual += dt*22;
-        player.speed *= Math.pow(0.9, dt*60);
-      } else {
-        if(keys['ArrowUp']||keys['w']||keys['W']) player.speed += accel*dt;
-        else if(keys['ArrowDown']||keys['s']||keys['S']) player.speed -= brakeDecel*dt;
-        else player.speed *= Math.pow(baseFriction, dt*60);
-
-        const targetTurnRate = 1.8 * clamp(Math.abs(player.speed)/maxSpeed, 0.55, 1) * (player.speed<0?-1:1);
-        let steerInput = 0;
-        if(keys['ArrowLeft']||keys['a']||keys['A']) steerInput -= 1;
-        if(keys['ArrowRight']||keys['d']||keys['D']) steerInput += 1;
-        player.angle += targetTurnRate*steerInput*dt;
+      const soloWasd = mode==='1p';
+      updateHumanKart(player, dt,
+        keys['ArrowUp'] || (soloWasd && (keys['w']||keys['W'])),
+        keys['ArrowDown'] || (soloWasd && (keys['s']||keys['S'])),
+        keys['ArrowLeft'] || (soloWasd && (keys['a']||keys['A'])),
+        keys['ArrowRight'] || (soloWasd && (keys['d']||keys['D']))
+      );
+      if(player2){
+        updateHumanKart(player2, dt, keys['w']||keys['W'], keys['s']||keys['S'], keys['a']||keys['A'], keys['d']||keys['D']);
       }
-      if(player.boostTimer>0) player.boostTimer -= dt;
-
-      const { d:offDist } = nearestS(player.x,player.y);
-      const offtrack = offDist > trackWidth/2;
-      const boosted = player.boostTimer>0;
-      const curMax = boosted? maxSpeed*1.5 : (offtrack? maxSpeed*0.65 : maxSpeed);
-      if(offtrack && !boosted) player.speed *= Math.pow(0.94, dt*60);
-      if(boosted) player.speed += accel*1.6*dt;
-      player.speed = clamp(player.speed, -maxSpeed*0.5, curMax);
-
-      player.x += Math.cos(player.angle)*player.speed*dt;
-      player.y += Math.sin(player.angle)*player.speed*dt;
-
-      const { s } = nearestS(player.x,player.y);
-      updateProgress(player, s);
     }
 
     // AI
@@ -1219,7 +1276,7 @@ const Kart = (function(){
           for(const k of allKarts()){
             if(!k.item && dist(k.x,k.y,box.x,box.y) < 30){
               k.item = randomItem();
-              if(!k.isPlayer) k.itemDelay = 0.5+Math.random()*1.4;
+              if(k.isAI) k.itemDelay = k.diff.itemMin + Math.random()*(k.diff.itemMax-k.diff.itemMin);
               box.active = false; box.respawn = BOX_RESPAWN;
               beep(700,0.07,'sine',0.06); beep(1000,0.07,'sine',0.06,0.06);
               break;
@@ -1253,14 +1310,22 @@ const Kart = (function(){
       });
     }
 
-    if(raceState==='racing' && player.progress >= totalLen*LAPS){
-      raceState='finished';
-      const order = rank();
-      finishPlace = order.indexOf(player)+1;
-      const mm = Math.floor(raceTime/60), ss=(raceTime%60).toFixed(1);
-      const place = finishPlace===1?'1ST':finishPlace===2?'2ND':'3RD';
-      beep(523,0.12,'square',0.08,0); beep(659,0.12,'square',0.08,0.13); beep(784,0.12,'square',0.08,0.26); beep(988,0.2,'square',0.09,0.39);
-      setTimeout(()=> showBigMessage('FINISHED '+place, 'Race time '+mm+':'+(ss.length<3?'0'+ss:ss), finishPlace===1?'#ffb84d':'#fff', 'RACE AGAIN', ()=>{ hideBigMessage(); reset(); }), 300);
+    if(raceState==='racing'){
+      const humans = player2 ? [player, player2] : [player];
+      if(humans.some(h => h.progress >= totalLen*LAPS)){
+        raceState='finished';
+        const order = rank();
+        const placeOf = k => { const p=order.indexOf(k)+1; return p===1?'1ST':p===2?'2ND':'3RD'; };
+        const mm = Math.floor(raceTime/60), ss=(raceTime%60).toFixed(1);
+        const timeStr = mm+':'+(ss.length<3?'0'+ss:ss);
+        beep(523,0.12,'square',0.08,0); beep(659,0.12,'square',0.08,0.13); beep(784,0.12,'square',0.08,0.26); beep(988,0.2,'square',0.09,0.39);
+        if(player2){
+          setTimeout(()=> showBigMessage('RACE FINISHED', 'P1: '+placeOf(player)+'  ·  P2: '+placeOf(player2)+'  ·  Time '+timeStr, '#ffb84d', 'RACE AGAIN', ()=>{ hideBigMessage(); startRace(mode,difficulty); }), 300);
+        } else {
+          finishPlace = order.indexOf(player)+1;
+          setTimeout(()=> showBigMessage('FINISHED '+placeOf(player), 'Race time '+timeStr, finishPlace===1?'#ffb84d':'#fff', 'RACE AGAIN', ()=>{ hideBigMessage(); startRace(mode,difficulty); }), 300);
+        }
+      }
     }
   }
 
@@ -1324,7 +1389,50 @@ const Kart = (function(){
     ctx.restore();
   }
 
+  function drawSetup(){
+    const grass = ctx.createLinearGradient(0,0,0,H);
+    grass.addColorStop(0,'#2a5a3a'); grass.addColorStop(1,'#1d3f28');
+    ctx.fillStyle=grass; ctx.fillRect(0,0,W,H);
+
+    ctx.save();
+    ctx.textAlign='center';
+    ctx.font='700 22px "Press Start 2P", monospace';
+    ctx.fillStyle='#fff'; ctx.shadowColor='#ffb84d'; ctx.shadowBlur=16;
+    ctx.fillText('KART RACER', W/2, 76);
+    ctx.shadowBlur=0;
+    ctx.font='12px Rubik, sans-serif'; ctx.fillStyle='#d8d0c8';
+    ctx.fillText('Choose players, then bot difficulty', W/2, 104);
+    ctx.restore();
+
+    const defs = [
+      {label:'1 PLAYER · EASY',   sub:'Arrows or WASD + Space. Two forgiving bots.', action:()=>startRace('1p','easy')},
+      {label:'1 PLAYER · MEDIUM', sub:'Arrows or WASD + Space. Two solid bots.', action:()=>startRace('1p','medium')},
+      {label:'1 PLAYER · HARD',   sub:'Arrows or WASD + Space. Two sharp bots.', action:()=>startRace('1p','hard')},
+      {label:'2 PLAYER · EASY',   sub:'P1: Arrows + Space · P2: WASD + Shift · 1 easy bot', action:()=>startRace('2p','easy')},
+      {label:'2 PLAYER · MEDIUM', sub:'P1: Arrows + Space · P2: WASD + Shift · 1 solid bot', action:()=>startRace('2p','medium')},
+      {label:'2 PLAYER · HARD',   sub:'P1: Arrows + Space · P2: WASD + Shift · 1 sharp bot', action:()=>startRace('2p','hard')}
+    ];
+    const btnW=560, btnH=52, gap=10, startY=128;
+    setupButtons = [];
+    defs.forEach((d,i)=>{
+      const bx = W/2-btnW/2, by = startY+i*(btnH+gap);
+      setupButtons.push({x:bx,y:by,w:btnW,h:btnH, action:d.action});
+      ctx.save();
+      ctx.fillStyle='rgba(255,184,77,.1)';
+      roundRectPath(bx,by,btnW,btnH,10); ctx.fill();
+      ctx.strokeStyle='rgba(255,184,77,.45)'; ctx.lineWidth=1.5;
+      roundRectPath(bx,by,btnW,btnH,10); ctx.stroke();
+      ctx.textAlign='left';
+      ctx.fillStyle='#fff'; ctx.font='12px "Press Start 2P", monospace';
+      ctx.fillText(d.label, bx+20, by+21);
+      ctx.fillStyle='#b8ae9e'; ctx.font='10.5px Rubik, sans-serif';
+      ctx.fillText(d.sub, bx+20, by+38);
+      ctx.restore();
+    });
+  }
+
   function render(){
+    if(matchState==='setup'){ drawSetup(); setHud('',''); return; }
     const grass = ctx.createLinearGradient(0,0,0,H);
     grass.addColorStop(0,'#2a5a3a'); grass.addColorStop(1,'#1d3f28');
     ctx.fillStyle=grass; ctx.fillRect(0,0,W,H);
@@ -1384,7 +1492,7 @@ const Kart = (function(){
     }
 
     const order = allKarts().slice().sort((a,b)=>a.progress-b.progress);
-    for(const k of order) drawKart(k, k.isPlayer);
+    for(const k of order) drawKart(k, !k.isAI);
 
     if(raceState==='countdown'){
       ctx.save();
@@ -1396,20 +1504,29 @@ const Kart = (function(){
       ctx.restore();
     }
 
-    const place = rank().indexOf(player)+1;
-    const placeStr = place===1?'1ST':place===2?'2ND':'3RD';
-    const lap = Math.min(player.lap+1, LAPS);
+    const rankOrder = rank();
+    const placeStr = k => { const p=rankOrder.indexOf(k)+1; return p===1?'1ST':p===2?'2ND':'3RD'; };
     const mm = Math.floor(raceTime/60), ss=(raceTime%60).toFixed(1);
-    const itemHud = player.item
-      ? '<span>ITEM</span><span class="v">'+ITEM_ICON[player.item]+' SPACE</span>'
-      : '<span>ITEM</span><span class="v">—</span>';
-    setHud(
-      '<span>LAP</span><span class="v">'+lap+'/'+LAPS+'</span><span>POS</span><span class="v">'+placeStr+'</span>',
-      itemHud+'<span>TIME</span><span class="v">'+mm+':'+(ss.length<3?'0'+ss:ss)+'</span>'
-    );
+    const timeStr = mm+':'+(ss.length<3?'0'+ss:ss);
+    if(player2){
+      const p1lap = Math.min(player.lap+1, LAPS), p2lap = Math.min(player2.lap+1, LAPS);
+      setHud(
+        '<span>P1</span><span class="v">LAP '+p1lap+'/'+LAPS+' · '+placeStr(player)+'</span>',
+        '<span>P2</span><span class="v">LAP '+p2lap+'/'+LAPS+' · '+placeStr(player2)+'</span><span>TIME</span><span class="v">'+timeStr+'</span>'
+      );
+    } else {
+      const lap = Math.min(player.lap+1, LAPS);
+      const itemHud = player.item
+        ? '<span>ITEM</span><span class="v">'+ITEM_ICON[player.item]+' SPACE</span>'
+        : '<span>ITEM</span><span class="v">—</span>';
+      setHud(
+        '<span>LAP</span><span class="v">'+lap+'/'+LAPS+'</span><span>POS</span><span class="v">'+placeStr(player)+'</span>',
+        itemHud+'<span>TIME</span><span class="v">'+timeStr+'</span>'
+      );
+    }
   }
 
-  return { reset, update, render };
+  return { reset, update, render, onDown };
 })();
 
 /* =========================================================================
@@ -1854,6 +1971,7 @@ canvas.addEventListener('mousedown', e=>{
   const p = getPos(e);
   if(state==='pool') Pool.onDown(p);
   else if(state==='duck') Duck.onDown(p);
+  else if(state==='kart') Kart.onDown(p);
 });
 canvas.addEventListener('mousemove', e=>{
   const p = getPos(e);
