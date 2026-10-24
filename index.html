@@ -80,7 +80,9 @@
       to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,.09) 3px
     );
     pointer-events:none;
-    mix-blend-mode:multiply;
+    /* no mix-blend-mode: a blend mode over a 60fps canvas forces the compositor to
+       re-blend this full-screen layer every frame instead of using the cheap path;
+       at this low opacity plain alpha-over looks effectively identical */
   }
   .vignette{
     position:absolute; inset:0;
@@ -339,9 +341,11 @@ function getPos(evt){
   };
 }
 
+let _hudLeftHtml = null, _hudRightHtml = null;
 function setHud(leftHtml, rightHtml){
-  hudLeft.innerHTML = leftHtml;
-  hudRight.innerHTML = rightHtml;
+  // avoid forcing a DOM reflow/repaint 60x/sec when the text hasn't actually changed
+  if(leftHtml !== _hudLeftHtml){ hudLeft.innerHTML = leftHtml; _hudLeftHtml = leftHtml; }
+  if(rightHtml !== _hudRightHtml){ hudRight.innerHTML = rightHtml; _hudRightHtml = rightHtml; }
 }
 function showBigMessage(title, sub, color, btnText, onClick){
   bigMessageTitle.textContent = title;
@@ -671,21 +675,31 @@ const Pool = (function(){
     }
   }
 
+  // table/pocket positions never change, so these gradients are built once and reused
+  // instead of being reallocated 60x/sec
+  let _feltGradient = null, _pocketGradients = null;
   function drawTable(){
     ctx.fillStyle = '#06201f';
     roundRect(table.x-26, table.y-26, table.w+52, table.h+52, 18); ctx.fill();
-    const felt = ctx.createLinearGradient(table.x,table.y,table.x,table.y+table.h);
-    felt.addColorStop(0,'#0d4a46'); felt.addColorStop(1,'#0a3a37');
-    ctx.fillStyle = felt;
+    if(!_feltGradient){
+      _feltGradient = ctx.createLinearGradient(table.x,table.y,table.x,table.y+table.h);
+      _feltGradient.addColorStop(0,'#0d4a46'); _feltGradient.addColorStop(1,'#0a3a37');
+    }
+    ctx.fillStyle = _feltGradient;
     roundRect(table.x, table.y, table.w, table.h, 6); ctx.fill();
     ctx.strokeStyle = 'rgba(57,230,196,.5)'; ctx.lineWidth=2;
     roundRect(table.x, table.y, table.w, table.h, 6); ctx.stroke();
-    for(const pk of pockets){
-      const g = ctx.createRadialGradient(pk.x,pk.y,2,pk.x,pk.y,pocketR);
-      g.addColorStop(0,'#000'); g.addColorStop(1,'#000a');
-      ctx.fillStyle=g;
-      ctx.beginPath(); ctx.arc(pk.x,pk.y,pocketR,0,Math.PI*2); ctx.fill();
+    if(!_pocketGradients){
+      _pocketGradients = pockets.map(pk=>{
+        const g = ctx.createRadialGradient(pk.x,pk.y,2,pk.x,pk.y,pocketR);
+        g.addColorStop(0,'#000'); g.addColorStop(1,'#000a');
+        return g;
+      });
     }
+    pockets.forEach((pk,i)=>{
+      ctx.fillStyle = _pocketGradients[i];
+      ctx.beginPath(); ctx.arc(pk.x,pk.y,pocketR,0,Math.PI*2); ctx.fill();
+    });
   }
   function roundRect(x,y,w,h,r){
     ctx.beginPath();
@@ -748,10 +762,17 @@ const Pool = (function(){
     }
   }
 
+  let _poolBgGradient = null;
+  function poolBg(){
+    if(!_poolBgGradient){
+      _poolBgGradient = ctx.createLinearGradient(0,0,0,H);
+      _poolBgGradient.addColorStop(0,'#1c1430'); _poolBgGradient.addColorStop(1,'#120f1c');
+    }
+    return _poolBgGradient;
+  }
+
   function drawSetup(){
-    const bg = ctx.createLinearGradient(0,0,0,H);
-    bg.addColorStop(0,'#1c1430'); bg.addColorStop(1,'#120f1c');
-    ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = poolBg(); ctx.fillRect(0,0,W,H);
 
     ctx.save();
     ctx.textAlign='center';
@@ -791,9 +812,7 @@ const Pool = (function(){
 
   function render(){
     if(matchState==='setup'){ drawSetup(); setHud('',''); return; }
-    const bg = ctx.createLinearGradient(0,0,0,H);
-    bg.addColorStop(0,'#1c1430'); bg.addColorStop(1,'#120f1c');
-    ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = poolBg(); ctx.fillRect(0,0,W,H);
     drawTable();
     drawBalls();
     drawAim();
@@ -943,18 +962,23 @@ const Duck = (function(){
     ctx.restore();
   }
 
+  let _skyGradient = null, _grassGradient = null;
   function render(){
-    const sky = ctx.createLinearGradient(0,0,0,GROUND_Y);
-    sky.addColorStop(0,'#2a1b3d'); sky.addColorStop(0.6,'#5a2d55'); sky.addColorStop(1,'#a8486b');
-    ctx.fillStyle=sky; ctx.fillRect(0,0,W,GROUND_Y);
+    if(!_skyGradient){
+      _skyGradient = ctx.createLinearGradient(0,0,0,GROUND_Y);
+      _skyGradient.addColorStop(0,'#2a1b3d'); _skyGradient.addColorStop(0.6,'#5a2d55'); _skyGradient.addColorStop(1,'#a8486b');
+    }
+    ctx.fillStyle=_skyGradient; ctx.fillRect(0,0,W,GROUND_Y);
     ctx.beginPath(); ctx.arc(W*0.8,110,46,0,Math.PI*2);
     ctx.fillStyle='rgba(255,210,140,.85)'; ctx.fill();
     ctx.save(); ctx.globalAlpha=.5; ctx.fillStyle='#1a0f24';
     for(let i=0;i<6;i++){ ctx.beginPath(); ctx.arc(80+i*170,GROUND_Y-10,26,Math.PI,0); ctx.fill(); }
     ctx.restore();
-    const grass = ctx.createLinearGradient(0,GROUND_Y,0,H);
-    grass.addColorStop(0,'#2f5a3c'); grass.addColorStop(1,'#1c3a26');
-    ctx.fillStyle=grass; ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
+    if(!_grassGradient){
+      _grassGradient = ctx.createLinearGradient(0,GROUND_Y,0,H);
+      _grassGradient.addColorStop(0,'#2f5a3c'); _grassGradient.addColorStop(1,'#1c3a26');
+    }
+    ctx.fillStyle=_grassGradient; ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
     ctx.strokeStyle='rgba(0,0,0,.15)'; ctx.lineWidth=2;
     for(let x=0;x<W;x+=18){ ctx.beginPath(); ctx.moveTo(x,GROUND_Y+6); ctx.lineTo(x+6,GROUND_Y-2); ctx.stroke(); }
 
@@ -1394,10 +1418,17 @@ const Kart = (function(){
     ctx.restore();
   }
 
+  let _kartGrassGradient = null;
+  function kartGrass(){
+    if(!_kartGrassGradient){
+      _kartGrassGradient = ctx.createLinearGradient(0,0,0,H);
+      _kartGrassGradient.addColorStop(0,'#2a5a3a'); _kartGrassGradient.addColorStop(1,'#1d3f28');
+    }
+    return _kartGrassGradient;
+  }
+
   function drawSetup(){
-    const grass = ctx.createLinearGradient(0,0,0,H);
-    grass.addColorStop(0,'#2a5a3a'); grass.addColorStop(1,'#1d3f28');
-    ctx.fillStyle=grass; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = kartGrass(); ctx.fillRect(0,0,W,H);
 
     ctx.save();
     ctx.textAlign='center';
@@ -1438,9 +1469,7 @@ const Kart = (function(){
 
   function render(){
     if(matchState==='setup'){ drawSetup(); setHud('',''); return; }
-    const grass = ctx.createLinearGradient(0,0,0,H);
-    grass.addColorStop(0,'#2a5a3a'); grass.addColorStop(1,'#1d3f28');
-    ctx.fillStyle=grass; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = kartGrass(); ctx.fillRect(0,0,W,H);
 
     strokeLoop(trackWidth+16, '#e9e4d8');
     strokeLoop(trackWidth+16, '#d1374f', [18,18]);
@@ -1808,10 +1837,13 @@ const Platform = (function(){
     ctx.closePath();
   }
 
+  let _skyGradient = null;
   function render(){
-    const sky = ctx.createLinearGradient(0,0,0,H);
-    sky.addColorStop(0,'#2a1f4a'); sky.addColorStop(1,'#1a1030');
-    ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
+    if(!_skyGradient){
+      _skyGradient = ctx.createLinearGradient(0,0,0,H);
+      _skyGradient.addColorStop(0,'#2a1f4a'); _skyGradient.addColorStop(1,'#1a1030');
+    }
+    ctx.fillStyle=_skyGradient; ctx.fillRect(0,0,W,H);
 
     ctx.save();
     ctx.fillStyle='rgba(185,104,240,.16)';
