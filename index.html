@@ -657,10 +657,13 @@ function updateAccountUI(){
 // Saves a completed game's result for the signed-in player. Silently does nothing
 // when signed out or when Supabase hasn't been configured yet -- playing never
 // requires an account, this only powers history/leaderboards for people who sign in.
+// Routed through a database function rather than a direct table insert, so the
+// client can never write a row by hand -- the function validates the game name,
+// checks the score is in a plausible range, and rate-limits submissions.
 async function submitResult(game, outcome, score, meta){
   if(!sb || !currentUser) return;
   try{
-    await sb.from('game_results').insert({ user_id: currentUser.id, game, outcome, score: (score==null?null:score), meta: meta||{} });
+    await sb.rpc('submit_game_result', { p_game: game, p_outcome: outcome, p_score: (score==null?null:score), p_meta: meta||{} });
   } catch(e){ /* a failed save shouldn't interrupt the game */ }
 }
 
