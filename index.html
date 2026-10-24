@@ -263,7 +263,7 @@
         <button class="cab-card" data-game="duck" style="--accent:#ff3d6e; --rot:1.5deg;">
           <span class="cab-icon">🦆</span>
           <span class="cab-title">DUCK HUNT</span>
-          <span class="cab-desc">Unlimited shells — but miss 3 shots and it's over. Click to fire.</span>
+          <span class="cab-desc">Unlimited shells, zero mercy — let one duck fly off unshot and it's over. Click to fire.</span>
         </button>
         <button class="cab-card" data-game="kart" style="--accent:#ffb84d; --rot:-1deg;">
           <span class="cab-icon">🏎️</span>
@@ -894,12 +894,20 @@ const Duck = (function(){
         d.y = d.baseY + Math.sin(d.t*d.freq + d.phase)*d.amp;
       }
     }
-    // resolve escapes / fallen-off-screen (escaping a duck unshot costs nothing but score)
+    // resolve escapes / fallen-off-screen -- letting any duck leave the screen unshot is an instant loss
+    let duckEscaped = false;
     ducks = ducks.filter(d=>{
       if(d.falling) return d.y < H+40;
       const gotAway = (d.vx>0 && d.x>W+60) || (d.vx<0 && d.x< -60);
+      if(gotAway) duckEscaped = true;
       return !gotAway;
     });
+    if(duckEscaped && !ended){
+      ended = true;
+      beep(150,0.3,'sawtooth',0.08);
+      setTimeout(()=> showBigMessage('GAME OVER', 'A duck got away! Final score '+score+'.', '#ff3d6e', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
+      return;
+    }
 
     if(allResolved() && !ended){
       spawnDelay -= dt;
