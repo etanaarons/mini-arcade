@@ -261,7 +261,7 @@
         <button class="cab-card" data-game="duck" style="--accent:#ff3d6e; --rot:1.5deg;">
           <span class="cab-icon">🦆</span>
           <span class="cab-title">DUCK HUNT</span>
-          <span class="cab-desc">Three shells a flock. Click to fire before the ducks clear the tree line.</span>
+          <span class="cab-desc">Unlimited shells — but miss 3 shots and it's over. Click to fire.</span>
         </button>
         <button class="cab-card" data-game="kart" style="--accent:#ffb84d; --rot:-1deg;">
           <span class="cab-icon">🏎️</span>
@@ -823,15 +823,16 @@ const Pool = (function(){
    ========================================================================= */
 const Duck = (function(){
   let ducks = [];
-  let ammo = 3, score = 0, round = 1, missed = 0, ended=false;
+  let score = 0, round = 1, misses = 0, ended=false;
   let spawnDelay = 0;
   let mouse = {x:W/2,y:H/2};
   let flashes = []; // miss marks {x,y,life}
   const GROUND_Y = H-70;
   const palette = ['#5ac1a8','#e0a33c','#7a6ad8','#d96a6a'];
+  const MAX_MISSES = 3;
 
   function reset(){
-    ducks=[]; ammo=3; score=0; round=1; missed=0; ended=false; spawnDelay=999; flashes=[];
+    ducks=[]; score=0; round=1; misses=0; ended=false; spawnDelay=999; flashes=[];
     spawnFlock();
   }
 
@@ -854,7 +855,6 @@ const Duck = (function(){
         alive:true, size:15+Math.random()*4
       });
     }
-    ammo = 3;
   }
 
   function allResolved(){ return ducks.length===0; }
@@ -875,23 +875,16 @@ const Duck = (function(){
         d.y = d.baseY + Math.sin(d.t*d.freq + d.phase)*d.amp;
       }
     }
-    // resolve escapes / fallen-off-screen
-    const before = ducks.length;
+    // resolve escapes / fallen-off-screen (escaping a duck unshot costs nothing but score)
     ducks = ducks.filter(d=>{
       if(d.falling) return d.y < H+40;
-      const escaped = (d.vx>0 && d.x>W+60) || (d.vx<0 && d.x< -60);
-      if(escaped){ missed++; }
-      return !escaped;
+      const gotAway = (d.vx>0 && d.x>W+60) || (d.vx<0 && d.x< -60);
+      return !gotAway;
     });
 
-    if(allResolved()){
+    if(allResolved() && !ended){
       spawnDelay -= dt;
       if(spawnDelay<=0){
-        if(missed>=10){
-          ended = true;
-          setTimeout(()=> showBigMessage('GAME OVER', 'Final score '+score+' · '+missed+' ducks got away.', '#ff3d6e', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
-          return;
-        }
         round++;
         spawnFlock();
         spawnDelay = 999; // reset after spawn so it doesn't re-trigger
@@ -902,8 +895,7 @@ const Duck = (function(){
   }
 
   function shoot(p){
-    if(ended || ammo<=0) return;
-    ammo--;
+    if(ended) return;
     beep(900,0.05,'square',0.05);
     let hit=null;
     for(const d of ducks){
@@ -917,6 +909,11 @@ const Duck = (function(){
     } else {
       flashes.push({x:p.x,y:p.y,life:0.25});
       beep(220,0.12,'sawtooth',0.05);
+      misses++;
+      if(misses>=MAX_MISSES){
+        ended = true;
+        setTimeout(()=> showBigMessage('GAME OVER', 'Final score '+score+' · missed '+misses+' shots.', '#ff3d6e', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
+      }
     }
   }
 
@@ -982,11 +979,11 @@ const Duck = (function(){
     ctx.stroke();
     ctx.restore();
 
-    let ammoStr = '';
-    for(let i=0;i<3;i++) ammoStr += (i<ammo? '🟥':'▫️');
+    let missStr = '';
+    for(let i=0;i<MAX_MISSES;i++) missStr += (i<misses? '❌':'⬜');
     setHud(
       '<span>SCORE</span><span class="v">'+score+'</span><span>ROUND</span><span class="v">'+round+'</span>',
-      '<span>AMMO</span><span class="v">'+ammoStr+'</span><span>ESCAPED</span><span class="v">'+missed+'/10</span>'
+      '<span>MISSES</span><span class="v">'+missStr+'</span>'
     );
   }
 
