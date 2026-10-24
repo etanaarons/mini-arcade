@@ -1,5 +1,6 @@
 <title>Mini Arcade</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root{
     --ink:#120f1c;
@@ -239,10 +240,190 @@
     letter-spacing:.3px;
   }
   .control-strip b{ color:var(--text); }
+
+  /* ---------- account bar + modals ---------- */
+  .account-bar{
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .acc-btn{
+    font-family:"Press Start 2P",monospace;
+    font-size:10.5px;
+    letter-spacing:.5px;
+    background:rgba(57,230,196,.08);
+    color:var(--text);
+    border:1.5px solid rgba(57,230,196,.4);
+    border-radius:7px;
+    padding:9px 14px;
+    cursor:pointer;
+  }
+  .acc-btn:hover{ background:rgba(57,230,196,.16); border-color:var(--pool); }
+  .acc-btn.gold{ background:rgba(255,184,77,.08); border-color:rgba(255,184,77,.4); }
+  .acc-btn.gold:hover{ background:rgba(255,184,77,.16); border-color:var(--kart); }
+
+  .modal-overlay{
+    position:fixed; inset:0;
+    background:rgba(5,4,10,.72);
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .modal-overlay.hidden{ display:none; }
+  .modal-card{
+    width:100%; max-width:420px;
+    max-height:84vh;
+    overflow-y:auto;
+    background:linear-gradient(160deg, var(--panel), var(--panel-2));
+    border:2px solid rgba(255,255,255,.14);
+    border-radius:12px;
+    box-shadow:0 24px 60px -16px rgba(0,0,0,.7);
+    padding:24px;
+    position:relative;
+  }
+  .modal-card.wide{ max-width:560px; }
+  .modal-title{
+    font-family:"Press Start 2P",monospace;
+    font-size:15px;
+    color:var(--text);
+    margin-bottom:16px;
+    padding-right:24px;
+  }
+  .modal-close{
+    position:absolute; top:14px; right:16px;
+    background:none; border:none;
+    color:var(--muted);
+    font-size:22px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .modal-close:hover{ color:var(--text); }
+  .modal-tabs{
+    display:flex;
+    gap:8px;
+    margin-bottom:16px;
+  }
+  .modal-tabs button{
+    flex:1;
+    font-family:"Press Start 2P",monospace;
+    font-size:10px;
+    padding:9px 6px;
+    background:rgba(255,255,255,.04);
+    color:var(--muted);
+    border:1.5px solid rgba(255,255,255,.1);
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .modal-tabs button.active{
+    color:var(--pool);
+    border-color:var(--pool);
+    background:rgba(57,230,196,.1);
+  }
+  .form-field{
+    width:100%;
+    font-family:"Rubik",sans-serif;
+    font-size:14px;
+    padding:11px 12px;
+    margin-bottom:10px;
+    background:rgba(0,0,0,.25);
+    border:1.5px solid rgba(255,255,255,.14);
+    border-radius:7px;
+    color:var(--text);
+    box-sizing:border-box;
+  }
+  .form-field:focus{ outline:none; border-color:var(--pool); }
+  .form-submit{
+    width:100%;
+    font-family:"Press Start 2P",monospace;
+    font-size:11.5px;
+    padding:12px;
+    margin-top:4px;
+    background:var(--pool);
+    color:#0a1f1c;
+    border:none;
+    border-radius:7px;
+    cursor:pointer;
+    letter-spacing:.5px;
+  }
+  .form-submit:hover{ filter:brightness(1.1); }
+  .form-submit:disabled{ opacity:.55; cursor:default; filter:none; }
+  .form-error{
+    color:var(--duck);
+    font-size:12.5px;
+    margin-top:10px;
+    line-height:1.4;
+    min-height:1px;
+  }
+  .form-hint{
+    color:var(--muted);
+    font-size:11.5px;
+    margin-bottom:14px;
+    line-height:1.5;
+  }
+  .acc-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:9px 0;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    font-size:13px;
+  }
+  .acc-row:last-child{ border-bottom:none; }
+  .list-empty{
+    color:var(--muted);
+    font-size:13px;
+    text-align:center;
+    padding:24px 0;
+  }
+  .hist-row{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 0;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    font-size:12.5px;
+  }
+  .hist-row:last-child{ border-bottom:none; }
+  .hist-game{
+    font-family:"Press Start 2P",monospace;
+    font-size:9px;
+    color:var(--pool);
+    letter-spacing:.5px;
+  }
+  .hist-meta{ color:var(--muted); font-size:11.5px; margin-top:2px; }
+  .hist-when{ color:var(--muted); font-size:11px; white-space:nowrap; }
+  .lb-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:9px 0;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    font-size:13.5px;
+  }
+  .lb-row:last-child{ border-bottom:none; }
+  .lb-rank{
+    font-family:"Press Start 2P",monospace;
+    font-size:11px;
+    color:var(--kart);
+    width:28px;
+    flex-shrink:0;
+  }
+  .lb-name{ flex:1; color:var(--text); }
+  .lb-score{
+    font-family:"Rubik",sans-serif;
+    font-weight:600;
+    font-variant-numeric:tabular-nums;
+    color:var(--pool);
+  }
 </style>
 
 <div class="cabinet">
   <div class="marquee"><span class="marquee-text">MINI ARCADE</span></div>
+  <div class="account-bar">
+    <button class="acc-btn" id="accountBtn">SIGN IN</button>
+    <button class="acc-btn gold" id="leaderboardBtn">🏆 LEADERBOARD</button>
+  </div>
   <div class="screen-wrap" id="screenWrap">
     <canvas id="game" width="960" height="600"></canvas>
     <div class="scanlines"></div>
@@ -292,6 +473,67 @@
   </div>
 </div>
 
+<!-- sign in / sign up -->
+<div class="modal-overlay hidden" id="authModal">
+  <div class="modal-card">
+    <button class="modal-close" id="authClose">&times;</button>
+    <div class="modal-title">ACCOUNT</div>
+    <div class="modal-tabs">
+      <button class="active" data-tab="signin" id="tabSignin">SIGN IN</button>
+      <button data-tab="signup" id="tabSignup">SIGN UP</button>
+    </div>
+    <div id="signinPane">
+      <input class="form-field" type="email" id="siEmail" placeholder="Email" autocomplete="email">
+      <input class="form-field" type="password" id="siPassword" placeholder="Password" autocomplete="current-password">
+      <button class="form-submit" id="siSubmit">SIGN IN</button>
+      <div class="form-error" id="siError"></div>
+    </div>
+    <div id="signupPane" class="hidden">
+      <div class="form-hint">Your username is shown on the leaderboard &mdash; your email never is.</div>
+      <input class="form-field" type="text" id="suUsername" placeholder="Username" autocomplete="username" maxlength="24">
+      <input class="form-field" type="email" id="suEmail" placeholder="Email" autocomplete="email">
+      <input class="form-field" type="password" id="suPassword" placeholder="Password (min 6 characters)" autocomplete="new-password">
+      <button class="form-submit" id="suSubmit">CREATE ACCOUNT</button>
+      <div class="form-error" id="suError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- signed-in account menu -->
+<div class="modal-overlay hidden" id="accountModal">
+  <div class="modal-card">
+    <button class="modal-close" id="accountClose">&times;</button>
+    <div class="modal-title">ACCOUNT</div>
+    <div class="acc-row"><span>Signed in as</span><strong id="accountUsername">&mdash;</strong></div>
+    <button class="form-submit" id="historyBtn" style="margin-top:16px;">VIEW MY HISTORY</button>
+    <button class="acc-btn" id="signOutBtn" style="width:100%;margin-top:10px;box-sizing:border-box;">SIGN OUT</button>
+  </div>
+</div>
+
+<!-- personal game history -->
+<div class="modal-overlay hidden" id="historyModal">
+  <div class="modal-card wide">
+    <button class="modal-close" id="historyClose">&times;</button>
+    <div class="modal-title">YOUR HISTORY</div>
+    <div id="historyList"><div class="list-empty">Loading&hellip;</div></div>
+  </div>
+</div>
+
+<!-- leaderboards -->
+<div class="modal-overlay hidden" id="leaderboardModal">
+  <div class="modal-card wide">
+    <button class="modal-close" id="leaderboardClose">&times;</button>
+    <div class="modal-title">LEADERBOARD</div>
+    <div class="modal-tabs">
+      <button class="active" data-game="duck">DUCK HUNT</button>
+      <button data-game="kart">KART RACER</button>
+      <button data-game="platform">SKY RUNNER</button>
+      <button data-game="pool">POOL</button>
+    </div>
+    <div id="leaderboardList"><div class="list-empty">Loading&hellip;</div></div>
+  </div>
+</div>
+
 <script>
 (function(){
 "use strict";
@@ -308,6 +550,35 @@ const bigMessageTitle = document.getElementById('bigMessageTitle');
 const bigMessageSub = document.getElementById('bigMessageSub');
 const bigMessageBtn = document.getElementById('bigMessageBtn');
 const exitBtn = document.getElementById('exitBtn');
+
+const accountBtn = document.getElementById('accountBtn');
+const leaderboardBtn = document.getElementById('leaderboardBtn');
+const authModal = document.getElementById('authModal');
+const authClose = document.getElementById('authClose');
+const tabSignin = document.getElementById('tabSignin');
+const tabSignup = document.getElementById('tabSignup');
+const signinPane = document.getElementById('signinPane');
+const signupPane = document.getElementById('signupPane');
+const siEmail = document.getElementById('siEmail');
+const siPassword = document.getElementById('siPassword');
+const siSubmit = document.getElementById('siSubmit');
+const siError = document.getElementById('siError');
+const suUsername = document.getElementById('suUsername');
+const suEmail = document.getElementById('suEmail');
+const suPassword = document.getElementById('suPassword');
+const suSubmit = document.getElementById('suSubmit');
+const suError = document.getElementById('suError');
+const accountModal = document.getElementById('accountModal');
+const accountClose = document.getElementById('accountClose');
+const accountUsername = document.getElementById('accountUsername');
+const historyBtn = document.getElementById('historyBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+const historyModal = document.getElementById('historyModal');
+const historyClose = document.getElementById('historyClose');
+const historyList = document.getElementById('historyList');
+const leaderboardModal = document.getElementById('leaderboardModal');
+const leaderboardClose = document.getElementById('leaderboardClose');
+const leaderboardList = document.getElementById('leaderboardList');
 
 let state = 'menu'; // 'menu' | 'pool' | 'duck' | 'kart'
 
@@ -356,6 +627,49 @@ function showBigMessage(title, sub, color, btnText, onClick){
   bigMessageBtn.onclick = onClick;
 }
 function hideBigMessage(){ bigMessage.classList.add('hidden'); }
+
+// ---------------- accounts, history & leaderboards (Supabase) ----------------
+// Fill these in with your project's values from Supabase: Project Settings -> API.
+// The anon key is meant to be public (it's protected by the table policies), so it's
+// fine for it to live here in client-side code.
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseConfigured = !SUPABASE_URL.startsWith('YOUR_') && !SUPABASE_ANON_KEY.startsWith('YOUR_');
+const sb = (supabaseConfigured && window.supabase) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+let currentUser = null;     // Supabase auth user, or null when signed out
+let currentUsername = null;
+const GAME_LABELS = { pool:'POOL', duck:'DUCK HUNT', kart:'KART RACER', platform:'SKY RUNNER' };
+
+async function refreshProfile(){
+  if(!sb || !currentUser){ currentUsername = null; return; }
+  try{
+    const { data } = await sb.from('profiles').select('username').eq('id', currentUser.id).single();
+    currentUsername = data ? data.username : currentUser.email;
+  } catch(e){ currentUsername = currentUser.email; }
+}
+
+function updateAccountUI(){
+  if(!accountBtn) return;
+  accountBtn.textContent = currentUser ? ('\u{1F464} '+(currentUsername||'…')) : 'SIGN IN';
+}
+
+// Saves a completed game's result for the signed-in player. Silently does nothing
+// when signed out or when Supabase hasn't been configured yet -- playing never
+// requires an account, this only powers history/leaderboards for people who sign in.
+async function submitResult(game, outcome, score, meta){
+  if(!sb || !currentUser) return;
+  try{
+    await sb.from('game_results').insert({ user_id: currentUser.id, game, outcome, score: (score==null?null:score), meta: meta||{} });
+  } catch(e){ /* a failed save shouldn't interrupt the game */ }
+}
+
+if(sb){
+  sb.auth.onAuthStateChange((event, session)=>{
+    currentUser = session ? session.user : null;
+    refreshProfile().then(updateAccountUI);
+  });
+}
 
 /* =========================================================================
    POOL
@@ -634,6 +948,9 @@ const Pool = (function(){
             const winner = currentPlayer;
             const title = mode==='solo' ? 'RACK CLEARED' : playerLabel(winner)+' WINS!';
             const sub = mode==='solo' ? 'You potted the 8-ball clean. Nice run.' : playerLabel(winner)+' sank the 8-ball clean.';
+            // only 'bot' mode has an unambiguous single human to credit the result to --
+            // 2-player is shared-keyboard local play, so it's left out of the leaderboard
+            if(mode==='bot') submitResult('pool', winner===1?'win':'loss', null, { difficulty });
             setTimeout(()=> showBigMessage(title, sub, '#39e6c4', mode==='solo'?'PLAY AGAIN':'REMATCH', ()=>{ hideBigMessage(); startMatch(mode,difficulty); }), 400);
             beep(523,0.12,'square',0.08,0); beep(659,0.12,'square',0.08,0.12); beep(784,0.18,'square',0.08,0.24);
           } else {
@@ -641,6 +958,7 @@ const Pool = (function(){
             const winner = currentPlayer===1?2:1;
             const title = mode==='solo' ? 'SCRATCHED THE 8' : playerLabel(winner)+' WINS!';
             const sub = mode==='solo' ? 'The black ball dropped too early. Table reset.' : playerLabel(currentPlayer)+' sank the 8-ball early.';
+            if(mode==='bot') submitResult('pool', winner===1?'win':'loss', null, { difficulty });
             setTimeout(()=> showBigMessage(title, sub, '#ff3d6e', mode==='solo'?'TRY AGAIN':'REMATCH', ()=>{ hideBigMessage(); startMatch(mode,difficulty); }), 400);
             beep(180,0.4,'sawtooth',0.08);
           }
@@ -905,6 +1223,7 @@ const Duck = (function(){
     if(duckEscaped && !ended){
       ended = true;
       beep(150,0.3,'sawtooth',0.08);
+      submitResult('duck', 'loss', score, { round, reason:'escaped' });
       setTimeout(()=> showBigMessage('GAME OVER', 'A duck got away! Final score '+score+'.', '#ff3d6e', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
       return;
     }
@@ -939,6 +1258,7 @@ const Duck = (function(){
       misses++;
       if(misses>=MAX_MISSES){
         ended = true;
+        submitResult('duck', 'loss', score, { round, reason:'missed_shots' });
         setTimeout(()=> showBigMessage('GAME OVER', 'Final score '+score+' · missed '+misses+' shots.', '#ff3d6e', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
       }
     }
@@ -1360,6 +1680,9 @@ const Kart = (function(){
           setTimeout(()=> showBigMessage('RACE FINISHED', 'P1: '+placeOf(player)+'  ·  P2: '+placeOf(player2)+'  ·  Time '+timeStr, '#ffb84d', 'RACE AGAIN', ()=>{ hideBigMessage(); startRace(mode,difficulty); }), 300);
         } else {
           finishPlace = order.indexOf(player)+1;
+          // only 1-player races have an unambiguous "the signed-in account raced this" --
+          // 2-player is shared-keyboard local play, so it's skipped to avoid misattributing it
+          submitResult('kart', placeOf(player).toLowerCase(), raceTime, { difficulty });
           setTimeout(()=> showBigMessage('FINISHED '+placeOf(player), 'Race time '+timeStr, finishPlace===1?'#ffb84d':'#fff', 'RACE AGAIN', ()=>{ hideBigMessage(); startRace(mode,difficulty); }), 300);
         }
       }
@@ -1654,7 +1977,7 @@ const Platform = (function(){
   let levelIndex = 0;
   let LEVEL_W = LEVELS[0].levelW;
   let platforms, spikes, coins, enemies, checkpoints, goal, totalCoins;
-  let player, respawnPoint, camX, coinsCollected, lives, gameTime, countdown, runState;
+  let player, respawnPoint, camX, coinsCollected, lives, gameTime, totalRunTime, countdown, runState;
 
   function buildLevel(){
     const def = LEVELS[levelIndex];
@@ -1708,6 +2031,7 @@ const Platform = (function(){
   function reset(){
     levelIndex = 0;
     lives = 3;
+    totalRunTime = 0;
     startLevel();
   }
 
@@ -1717,6 +2041,7 @@ const Platform = (function(){
     beep(150,0.3,'sawtooth',0.08);
     if(lives<=0){
       runState='over';
+      submitResult('platform', 'loss', null, { level: levelIndex+1, coins: coinsCollected });
       setTimeout(()=> showBigMessage('GAME OVER', 'Collected '+coinsCollected+'/'+totalCoins+' coins.', '#ff3d6e', 'TRY AGAIN', ()=>{ hideBigMessage(); reset(); }), 300);
     } else {
       player.x=respawnPoint.x; player.y=respawnPoint.y; player.vx=0; player.vy=0; player.invuln=INVULN;
@@ -1731,7 +2056,10 @@ const Platform = (function(){
     beep(523,0.1,'square',0.08,0); beep(659,0.1,'square',0.08,0.1); beep(784,0.1,'square',0.08,0.2); beep(1046,0.2,'square',0.09,0.3);
     const isLast = levelIndex >= LEVELS.length-1;
     if(isLast){
-      setTimeout(()=> showBigMessage('ARCADE COMPLETE', 'All '+LEVELS.length+' levels cleared · Time '+timeStr+' · '+coinsCollected+'/'+totalCoins+' coins', '#b968f0', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 300);
+      const totalMm=Math.floor(totalRunTime/60), totalSs=(totalRunTime%60).toFixed(1);
+      const totalTimeStr = totalMm+':'+(totalSs.length<3?'0'+totalSs:totalSs);
+      submitResult('platform', 'cleared', totalRunTime, { coins: coinsCollected });
+      setTimeout(()=> showBigMessage('ARCADE COMPLETE', 'All '+LEVELS.length+' levels cleared · Time '+totalTimeStr+' · '+coinsCollected+'/'+totalCoins+' coins', '#b968f0', 'PLAY AGAIN', ()=>{ hideBigMessage(); reset(); }), 300);
     } else {
       setTimeout(()=> showBigMessage('LEVEL '+(levelIndex+1)+' CLEAR', 'Time '+timeStr+' · '+coinsCollected+'/'+totalCoins+' coins', '#b968f0', 'NEXT LEVEL', ()=>{ hideBigMessage(); levelIndex++; startLevel(); }), 300);
     }
@@ -1764,6 +2092,7 @@ const Platform = (function(){
     }
     if(runState!=='playing') return;
     gameTime += dt;
+    totalRunTime += dt;
     if(player.invuln>0) player.invuln -= dt;
 
     let moveInput = 0;
@@ -2013,6 +2342,147 @@ document.querySelectorAll('.cab-card').forEach(btn=>{
 exitBtn.addEventListener('click', ()=> setState('menu'));
 window.addEventListener('keydown', e=>{
   if(e.key==='Escape' && state!=='menu') setState('menu');
+});
+
+/* ---------------- account / history / leaderboard UI ---------------- */
+function openModal(el){ el.classList.remove('hidden'); }
+function closeModal(el){ el.classList.add('hidden'); }
+
+accountBtn.addEventListener('click', ()=>{
+  if(currentUser){ accountUsername.textContent = currentUsername || currentUser.email; openModal(accountModal); }
+  else { siError.textContent=''; suError.textContent=''; openModal(authModal); }
+});
+authClose.addEventListener('click', ()=> closeModal(authModal));
+accountClose.addEventListener('click', ()=> closeModal(accountModal));
+historyClose.addEventListener('click', ()=> closeModal(historyModal));
+leaderboardClose.addEventListener('click', ()=> closeModal(leaderboardModal));
+[authModal, accountModal, historyModal, leaderboardModal].forEach(m=>{
+  m.addEventListener('click', e=>{ if(e.target===m) closeModal(m); });
+});
+
+tabSignin.addEventListener('click', ()=>{
+  tabSignin.classList.add('active'); tabSignup.classList.remove('active');
+  signinPane.classList.remove('hidden'); signupPane.classList.add('hidden');
+});
+tabSignup.addEventListener('click', ()=>{
+  tabSignup.classList.add('active'); tabSignin.classList.remove('active');
+  signupPane.classList.remove('hidden'); signinPane.classList.add('hidden');
+});
+
+function setBusy(btn, busy, label){ btn.disabled = busy; btn.textContent = busy ? 'PLEASE WAIT…' : label; }
+
+siSubmit.addEventListener('click', async ()=>{
+  siError.textContent = '';
+  if(!sb){ siError.textContent = 'Not connected yet — add your Supabase keys to the game code first.'; return; }
+  const email = siEmail.value.trim(), password = siPassword.value;
+  if(!email || !password){ siError.textContent = 'Enter your email and password.'; return; }
+  setBusy(siSubmit, true, 'SIGN IN');
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  setBusy(siSubmit, false, 'SIGN IN');
+  if(error){ siError.textContent = error.message; return; }
+  closeModal(authModal);
+  siEmail.value=''; siPassword.value='';
+});
+
+suSubmit.addEventListener('click', async ()=>{
+  suError.textContent = '';
+  if(!sb){ suError.textContent = 'Not connected yet — add your Supabase keys to the game code first.'; return; }
+  const username = suUsername.value.trim(), email = suEmail.value.trim(), password = suPassword.value;
+  if(!username || !email || !password){ suError.textContent = 'Fill in a username, email, and password.'; return; }
+  if(password.length < 6){ suError.textContent = 'Password needs to be at least 6 characters.'; return; }
+  setBusy(suSubmit, true, 'CREATE ACCOUNT');
+  const { data: existing } = await sb.from('profiles').select('id').eq('username', username).maybeSingle();
+  if(existing){
+    setBusy(suSubmit, false, 'CREATE ACCOUNT');
+    suError.textContent = 'That username is taken — try another.';
+    return;
+  }
+  const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ username } } });
+  setBusy(suSubmit, false, 'CREATE ACCOUNT');
+  if(error){ suError.textContent = error.message; return; }
+  if(data.session){
+    closeModal(authModal);
+    suUsername.value=''; suEmail.value=''; suPassword.value='';
+  } else {
+    suError.style.color = 'var(--pool)';
+    suError.textContent = 'Check your email to confirm your account, then sign in.';
+  }
+});
+
+signOutBtn.addEventListener('click', async ()=>{
+  if(sb) await sb.auth.signOut();
+  closeModal(accountModal);
+});
+
+historyBtn.addEventListener('click', ()=>{
+  closeModal(accountModal);
+  openModal(historyModal);
+  loadHistory();
+});
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatScore(game, score){
+  if(game==='kart' || game==='platform'){
+    const m = Math.floor(score/60), s = (score%60).toFixed(1);
+    return m+':'+(s.length<3?'0'+s:s);
+  }
+  return String(score);
+}
+
+async function loadHistory(){
+  historyList.innerHTML = '<div class="list-empty">Loading…</div>';
+  if(!sb || !currentUser) return;
+  const { data, error } = await sb.from('game_results')
+    .select('*').eq('user_id', currentUser.id)
+    .order('created_at', { ascending:false }).limit(50);
+  if(error || !data || data.length===0){
+    historyList.innerHTML = '<div class="list-empty">No games recorded yet — go play something!</div>';
+    return;
+  }
+  historyList.innerHTML = data.map(row=>{
+    const when = new Date(row.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+    const scoreStr = row.score==null ? '' : (' · ' + formatScore(row.game, row.score));
+    return '<div class="hist-row">'
+      + '<div><div class="hist-game">'+escapeHtml(GAME_LABELS[row.game]||row.game)+'</div>'
+      + '<div class="hist-meta">'+escapeHtml(String(row.outcome).toUpperCase())+scoreStr+'</div></div>'
+      + '<div class="hist-when">'+when+'</div></div>';
+  }).join('');
+}
+
+function lbRow(i, username, scoreText){
+  return '<div class="lb-row"><div class="lb-rank">#'+(i+1)+'</div><div class="lb-name">'+escapeHtml(username)+'</div><div class="lb-score">'+escapeHtml(scoreText)+'</div></div>';
+}
+
+async function loadLeaderboard(game){
+  leaderboardList.innerHTML = '<div class="list-empty">Loading…</div>';
+  if(!sb){
+    leaderboardList.innerHTML = '<div class="list-empty">Not connected yet — the game owner still needs to add their Supabase keys.</div>';
+    return;
+  }
+  if(game==='pool'){
+    const { data, error } = await sb.from('pool_leaderboard').select('*').order('wins',{ascending:false}).limit(10);
+    if(error || !data || data.length===0){ leaderboardList.innerHTML = '<div class="list-empty">No ranked pool games yet.</div>'; return; }
+    leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, row.wins+' win'+(row.wins===1?'':'s'))).join('');
+    return;
+  }
+  const table = game+'_leaderboard';
+  const col = game==='duck' ? 'best_score' : 'best_time';
+  const asc = game!=='duck';
+  const { data, error } = await sb.from(table).select('*').order(col,{ascending:asc}).limit(10);
+  if(error || !data || data.length===0){ leaderboardList.innerHTML = '<div class="list-empty">No scores yet — be the first!</div>'; return; }
+  leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, formatScore(game, row[col]))).join('');
+}
+
+leaderboardBtn.addEventListener('click', ()=>{
+  openModal(leaderboardModal);
+  loadLeaderboard('duck');
+});
+leaderboardModal.querySelectorAll('.modal-tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    leaderboardModal.querySelectorAll('.modal-tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    loadLeaderboard(btn.getAttribute('data-game'));
+  });
 });
 
 canvas.addEventListener('mousedown', e=>{
