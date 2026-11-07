@@ -107,7 +107,7 @@
   .menu-overlay.hidden{ display:none; }
   .menu-grid{
     display:flex;
-    gap:4.5%;
+    gap:3%;
     justify-content:center;
     align-items:center;
     flex-wrap:wrap;
@@ -116,8 +116,8 @@
   .cab-card{
     --accent:#fff;
     position:relative;
-    width:21%;
-    min-width:132px;
+    width:17.5%;
+    min-width:118px;
     background:linear-gradient(160deg, var(--panel) 0%, var(--panel-2) 100%);
     border:2px solid rgba(255,255,255,.08);
     border-top:3px solid var(--accent);
@@ -469,6 +469,11 @@
           <span class="cab-title">SKY RUNNER</span>
           <span class="cab-desc">Arrow keys or WASD, Space to jump. Dodge spikes and goombas, grab coins, reach the flag.</span>
         </button>
+        <button class="cab-card" data-game="stack" style="--accent:#9dff57; --rot:-1.5deg;">
+          <span class="cab-icon">🧱</span>
+          <span class="cab-title">STACK TOWER</span>
+          <span class="cab-desc">Click or Space to drop. Line it up with the block below — miss the edge and it's sliced off for good.</span>
+        </button>
       </div>
     </div>
 
@@ -542,6 +547,7 @@
       <button data-game="kart">KART RACER</button>
       <button data-game="platform">SKY RUNNER</button>
       <button data-game="pool">POOL</button>
+      <button data-game="stack">STACK TOWER</button>
     </div>
     <div class="modal-tabs sub hidden" id="lbDiffTabs">
       <button class="active" data-diff="easy">EASY BOT</button>
@@ -658,7 +664,7 @@ const sb = (supabaseConfigured && window.supabase) ? window.supabase.createClien
 
 let currentUser = null;     // Supabase auth user, or null when signed out
 let currentUsername = null;
-const GAME_LABELS = { pool:'POOL', duck:'DUCK HUNT', kart:'KART RACER', platform:'SKY RUNNER' };
+const GAME_LABELS = { pool:'POOL', duck:'DUCK HUNT', kart:'KART RACER', platform:'SKY RUNNER', stack:'STACK TOWER' };
 
 async function refreshProfile(){
   if(!sb || !currentUser){ currentUsername = null; return; }
@@ -2337,6 +2343,228 @@ const Platform = (function(){
 })();
 
 /* =========================================================================
+   STACK TOWER
+   ========================================================================= */
+const Stack = (function(){
+  const CENTER_X = W/2, BASE_Y = 430;
+  const ISO_X = 0.87, ISO_Y = 0.5;
+  const BLOCK_H = 34;
+  const BASE_W = 150;
+  const MIN_OVERLAP = 6;
+  const PERFECT_TOL = 4;
+  const MIN_SURVIVABLE = 8;
+  const RANGE = 170;
+
+  let stack = [], fallingPieces = [], moving = null;
+  let score = 0, best = 0, runState = 'playing', perfectFlash = 0;
+
+  function hueAt(i){ return (140 + i*7) % 360; }
+
+  function spawnMoving(){
+    const top = stack[stack.length-1];
+    const axis = top.axis==='x' ? 'y' : 'x'; // alternate axis every layer, like the real thing
+    const z = top.z + BLOCK_H;
+    const sign = Math.random()<0.5 ? -1 : 1;
+    moving = {
+      z, wx: top.wx, wy: top.wy, axis, dir: sign,
+      speed: 90 + Math.min(score*3, 160),
+      cx: top.cx + (axis==='x' ? sign*RANGE : 0),
+      cy: top.cy + (axis==='y' ? sign*RANGE : 0)
+    };
+  }
+
+  function reset(){
+    stack = [{ cx:0, cy:0, z:0, wx:BASE_W, wy:BASE_W, hue:hueAt(0), axis:'x' }];
+    fallingPieces = [];
+    score = 0;
+    runState = 'playing';
+    perfectFlash = 0;
+    spawnMoving();
+  }
+
+  function makeFallingPiece(cx, cy, z, wx, wy, hue, dirSign, axis){
+    const kick = 70, sign = dirSign==='pos' ? 1 : -1;
+    return {
+      cx, cy, z, wx, wy, hue,
+      vx: axis==='x' ? sign*kick : 0,
+      vy: axis==='y' ? sign*kick : 0,
+      vz: 10, az: -480,
+      rot: 0, vrot: sign*2.6,
+      life: 1.4
+    };
+  }
+
+  function endGame(){
+    runState = 'over';
+    best = Math.max(best, score);
+    submitResult('stack', 'loss', score, {});
+    setTimeout(()=> showBigMessage('TOWER DOWN', 'You stacked '+score+' block'+(score===1?'':'s')+'.', '#9dff57', 'TRY AGAIN', ()=>{ hideBigMessage(); reset(); }), 250);
+  }
+
+  function drop(){
+    if(runState!=='playing' || !moving) return;
+    const top = stack[stack.length-1];
+    const axis = moving.axis;
+    const mC = axis==='x' ? moving.cx : moving.cy, mW = axis==='x' ? moving.wx : moving.wy;
+    const tC = axis==='x' ? top.cx : top.cy, tW = axis==='x' ? top.wx : top.wy;
+    const mMin = mC-mW/2, mMax = mC+mW/2, tMin = tC-tW/2, tMax = tC+tW/2;
+    let newMin = Math.max(mMin,tMin), newMax = Math.min(mMax,tMax);
+    const overlap0 = newMax-newMin;
+
+    if(overlap0 < MIN_OVERLAP){
+      fallingPieces.push(makeFallingPiece(moving.cx, moving.cy, moving.z, moving.wx, moving.wy, hueAt(stack.length), moving.dir>0?'pos':'neg', axis));
+      moving = null;
+      beep(140,0.3,'sawtooth',0.08);
+      endGame();
+      return;
+    }
+
+    const perfect = overlap0 >= mW - PERFECT_TOL;
+    let overlap = overlap0;
+    if(perfect){ newMin = tMin; newMax = tMax; overlap = tMax-tMin; }
+    const newC = (newMin+newMax)/2;
+    const hue = hueAt(stack.length);
+    const placed = axis==='x'
+      ? { cx:newC, cy:moving.cy, z:moving.z, wx:overlap, wy:moving.wy, hue, axis }
+      : { cx:moving.cx, cy:newC, z:moving.z, wx:moving.wx, wy:overlap, hue, axis };
+
+    if(!perfect){
+      if(mMin < newMin){
+        const w = newMin-mMin, c = (mMin+newMin)/2;
+        fallingPieces.push(axis==='x'
+          ? makeFallingPiece(c, moving.cy, moving.z, w, moving.wy, hue, 'neg', axis)
+          : makeFallingPiece(moving.cx, c, moving.z, moving.wx, w, hue, 'neg', axis));
+      }
+      if(mMax > newMax){
+        const w = mMax-newMax, c = (newMax+mMax)/2;
+        fallingPieces.push(axis==='x'
+          ? makeFallingPiece(c, moving.cy, moving.z, w, moving.wy, hue, 'pos', axis)
+          : makeFallingPiece(moving.cx, c, moving.z, moving.wx, w, hue, 'pos', axis));
+      }
+    } else {
+      perfectFlash = 0.8;
+      beep(1200,0.09,'sine',0.08,0.03);
+    }
+
+    stack.push(placed);
+    score++;
+
+    if(placed.wx < MIN_SURVIVABLE || placed.wy < MIN_SURVIVABLE){
+      moving = null;
+      beep(300,0.15,'sawtooth',0.07);
+      endGame();
+      return;
+    }
+
+    beep(480+Math.min(score*3,260), 0.05, 'square', 0.06);
+    spawnMoving();
+  }
+
+  function onDown(){ drop(); }
+  window.addEventListener('keydown', e=>{
+    if(e.key===' '||e.key==='Spacebar'){
+      if(state==='stack') e.preventDefault();
+      if(state==='stack') drop();
+    }
+  });
+
+  function update(dt){
+    if(runState==='playing' && moving){
+      const top = stack[stack.length-1];
+      if(moving.axis==='x'){
+        moving.cx += moving.dir*moving.speed*dt;
+        if(moving.cx > top.cx+RANGE){ moving.cx = top.cx+RANGE; moving.dir=-1; }
+        if(moving.cx < top.cx-RANGE){ moving.cx = top.cx-RANGE; moving.dir=1; }
+      } else {
+        moving.cy += moving.dir*moving.speed*dt;
+        if(moving.cy > top.cy+RANGE){ moving.cy = top.cy+RANGE; moving.dir=-1; }
+        if(moving.cy < top.cy-RANGE){ moving.cy = top.cy-RANGE; moving.dir=1; }
+      }
+    }
+    for(const f of fallingPieces){
+      f.vz += f.az*dt;
+      f.cx += f.vx*dt; f.cy += f.vy*dt; f.z += f.vz*dt;
+      f.rot += f.vrot*dt;
+      f.life -= dt;
+    }
+    fallingPieces = fallingPieces.filter(f=>f.life>0);
+    if(perfectFlash>0) perfectFlash -= dt;
+  }
+
+  let _bgGradient = null;
+  function stackBg(){
+    if(!_bgGradient){
+      _bgGradient = ctx.createLinearGradient(0,0,0,H);
+      _bgGradient.addColorStop(0,'#1a1430'); _bgGradient.addColorStop(1,'#0d0a1a');
+    }
+    return _bgGradient;
+  }
+
+  function render(){
+    ctx.fillStyle = stackBg(); ctx.fillRect(0,0,W,H);
+
+    const topZ = stack.length ? stack[stack.length-1].z : 0;
+    function project(x,y,z){
+      return { sx: CENTER_X + (x-y)*ISO_X, sy: BASE_Y - (x+y)*ISO_Y - z + topZ };
+    }
+    function poly(pts, fill){
+      ctx.beginPath();
+      ctx.moveTo(pts[0].sx, pts[0].sy);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    function drawBlock(cx,cy,z,wx,wy,hue){
+      const hx=wx/2, hy=wy/2;
+      poly([project(cx-hx,cy-hy,z), project(cx-hx,cy+hy,z), project(cx-hx,cy+hy,z+BLOCK_H), project(cx-hx,cy-hy,z+BLOCK_H)], `hsl(${hue},62%,30%)`);
+      poly([project(cx-hx,cy-hy,z), project(cx+hx,cy-hy,z), project(cx+hx,cy-hy,z+BLOCK_H), project(cx-hx,cy-hy,z+BLOCK_H)], `hsl(${hue},62%,42%)`);
+      poly([project(cx-hx,cy-hy,z+BLOCK_H), project(cx+hx,cy-hy,z+BLOCK_H), project(cx+hx,cy+hy,z+BLOCK_H), project(cx-hx,cy+hy,z+BLOCK_H)], `hsl(${hue},68%,56%)`);
+    }
+
+    const visible = stack.length > 22 ? stack.slice(stack.length-22) : stack;
+    for(const b of visible) drawBlock(b.cx,b.cy,b.z,b.wx,b.wy,b.hue);
+    if(runState==='playing' && moving) drawBlock(moving.cx,moving.cy,moving.z,moving.wx,moving.wy,hueAt(stack.length));
+
+    for(const f of fallingPieces){
+      const p = project(f.cx, f.cy, f.z);
+      ctx.save();
+      ctx.globalAlpha = clamp(f.life/1.4, 0, 1);
+      ctx.translate(p.sx, p.sy);
+      ctx.rotate(f.rot);
+      const w = Math.max(8, (f.wx+f.wy)*ISO_X*0.45);
+      ctx.fillStyle = `hsl(${f.hue},65%,45%)`;
+      ctx.fillRect(-w/2,-w/2,w,w);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.textAlign='center';
+    ctx.font='700 46px "Press Start 2P", monospace';
+    ctx.fillStyle='#fff'; ctx.shadowColor='#9dff57'; ctx.shadowBlur=18;
+    ctx.fillText(String(score), W/2, 90);
+    ctx.restore();
+
+    if(perfectFlash>0){
+      ctx.save();
+      ctx.globalAlpha = clamp(perfectFlash/0.8,0,1);
+      ctx.textAlign='center';
+      ctx.font='700 18px "Press Start 2P", monospace';
+      ctx.fillStyle='#9dff57';
+      ctx.fillText('PERFECT!', W/2, 128);
+      ctx.restore();
+    }
+
+    setHud(
+      '<span>SCORE</span><span class="v">'+score+'</span>',
+      '<span>BEST</span><span class="v">'+best+'</span>'
+    );
+  }
+
+  return { reset, update, render, onDown };
+})();
+
+/* =========================================================================
    wiring
    ========================================================================= */
 function setState(s){
@@ -2352,6 +2580,7 @@ function setState(s){
     if(s==='duck') Duck.reset();
     if(s==='kart') Kart.reset();
     if(s==='platform') Platform.reset();
+    if(s==='stack') Stack.reset();
   }
 }
 
@@ -2492,9 +2721,10 @@ async function loadLeaderboard(game, difficulty){
     leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, row.wins+' win'+(row.wins===1?'':'s'))).join('');
     return;
   }
+  const higherIsBetter = (game==='duck' || game==='stack');
   const table = game+'_leaderboard';
-  const col = game==='duck' ? 'best_score' : 'best_time';
-  const asc = game!=='duck';
+  const col = higherIsBetter ? 'best_score' : 'best_time';
+  const asc = !higherIsBetter;
   let query = sb.from(table).select('*');
   if(game==='kart') query = query.eq('difficulty', difficulty);
   const { data, error } = await query.order(col,{ascending:asc}).limit(10);
@@ -2535,6 +2765,7 @@ canvas.addEventListener('mousedown', e=>{
   if(state==='pool') Pool.onDown(p);
   else if(state==='duck') Duck.onDown(p);
   else if(state==='kart') Kart.onDown(p);
+  else if(state==='stack') Stack.onDown(p);
 });
 canvas.addEventListener('mousemove', e=>{
   const p = getPos(e);
@@ -2560,6 +2791,7 @@ function loop(t){
   else if(state==='duck'){ Duck.update(dt); Duck.render(); }
   else if(state==='kart'){ Kart.update(dt); Kart.render(); }
   else if(state==='platform'){ Platform.update(dt); Platform.render(); }
+  else if(state==='stack'){ Stack.update(dt); Stack.render(); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
