@@ -2628,11 +2628,16 @@ siSubmit.addEventListener('click', async ()=>{
   const email = siEmail.value.trim(), password = siPassword.value;
   if(!email || !password){ siError.textContent = 'Enter your email and password.'; return; }
   setBusy(siSubmit, true, 'SIGN IN');
-  const { error } = await sb.auth.signInWithPassword({ email, password });
-  setBusy(siSubmit, false, 'SIGN IN');
-  if(error){ siError.textContent = error.message; return; }
-  closeModal(authModal);
-  siEmail.value=''; siPassword.value='';
+  try{
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if(error){ siError.textContent = error.message; return; }
+    closeModal(authModal);
+    siEmail.value=''; siPassword.value='';
+  } catch(e){
+    siError.textContent = "Couldn't reach the server — try again in a moment.";
+  } finally {
+    setBusy(siSubmit, false, 'SIGN IN');
+  }
 });
 
 suSubmit.addEventListener('click', async ()=>{
@@ -2642,26 +2647,31 @@ suSubmit.addEventListener('click', async ()=>{
   if(!username || !email || !password){ suError.textContent = 'Fill in a username, email, and password.'; return; }
   if(password.length < 6){ suError.textContent = 'Password needs to be at least 6 characters.'; return; }
   setBusy(suSubmit, true, 'CREATE ACCOUNT');
-  const { data: existing } = await sb.from('profiles').select('id').eq('username', username).maybeSingle();
-  if(existing){
+  try{
+    const { data: existing } = await sb.from('profiles').select('id').eq('username', username).maybeSingle();
+    if(existing){
+      suError.textContent = 'That username is taken — try another.';
+      return;
+    }
+    const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ username } } });
+    if(error){ suError.textContent = error.message; return; }
+    if(data.session){
+      closeModal(authModal);
+      suUsername.value=''; suEmail.value=''; suPassword.value='';
+    } else {
+      suError.style.color = 'var(--pool)';
+      suError.textContent = 'Check your email to confirm your account, then sign in.';
+    }
+  } catch(e){
+    suError.textContent = "Couldn't reach the server — try again in a moment.";
+  } finally {
     setBusy(suSubmit, false, 'CREATE ACCOUNT');
-    suError.textContent = 'That username is taken — try another.';
-    return;
-  }
-  const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ username } } });
-  setBusy(suSubmit, false, 'CREATE ACCOUNT');
-  if(error){ suError.textContent = error.message; return; }
-  if(data.session){
-    closeModal(authModal);
-    suUsername.value=''; suEmail.value=''; suPassword.value='';
-  } else {
-    suError.style.color = 'var(--pool)';
-    suError.textContent = 'Check your email to confirm your account, then sign in.';
   }
 });
 
 signOutBtn.addEventListener('click', async ()=>{
-  if(sb) await sb.auth.signOut();
+  try{ if(sb) await sb.auth.signOut(); }
+  catch(e){ /* sign out locally regardless -- the modal closing is enough feedback */ }
   closeModal(accountModal);
 });
 
@@ -2683,11 +2693,14 @@ function formatScore(game, score){
 async function loadHistory(){
   historyList.innerHTML = '<div class="list-empty">Loading…</div>';
   if(!sb || !currentUser) return;
-  const { data, error } = await sb.from('game_results')
-    .select('*').eq('user_id', currentUser.id)
-    .order('created_at', { ascending:false }).limit(50);
+  let data, error;
+  try{
+    ({ data, error } = await sb.from('game_results')
+      .select('*').eq('user_id', currentUser.id)
+      .order('created_at', { ascending:false }).limit(50));
+  } catch(e){ error = e; }
   if(error || !data || data.length===0){
-    historyList.innerHTML = '<div class="list-empty">No games recorded yet — go play something!</div>';
+    historyList.innerHTML = '<div class="list-empty">'+(error ? "Couldn't load your history right now." : 'No games recorded yet — go play something!')+'</div>';
     return;
   }
   historyList.innerHTML = data.map(row=>{
@@ -2715,24 +2728,28 @@ async function loadLeaderboard(game, difficulty){
     leaderboardList.innerHTML = '<div class="list-empty">Not connected yet — the game owner still needs to add their Supabase keys.</div>';
     return;
   }
-  if(game==='pool'){
-    const { data, error } = await sb.from('pool_leaderboard').select('*').eq('difficulty', difficulty).order('wins',{ascending:false}).limit(10);
-    if(error || !data || data.length===0){ leaderboardList.innerHTML = '<div class="list-empty">No ranked pool games yet at this difficulty.</div>'; return; }
-    leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, row.wins+' win'+(row.wins===1?'':'s'))).join('');
-    return;
+  try{
+    if(game==='pool'){
+      const { data, error } = await sb.from('pool_leaderboard').select('*').eq('difficulty', difficulty).order('wins',{ascending:false}).limit(10);
+      if(error || !data || data.length===0){ leaderboardList.innerHTML = '<div class="list-empty">No ranked pool games yet at this difficulty.</div>'; return; }
+      leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, row.wins+' win'+(row.wins===1?'':'s'))).join('');
+      return;
+    }
+    const higherIsBetter = (game==='duck' || game==='stack');
+    const table = game+'_leaderboard';
+    const col = higherIsBetter ? 'best_score' : 'best_time';
+    const asc = !higherIsBetter;
+    let query = sb.from(table).select('*');
+    if(game==='kart') query = query.eq('difficulty', difficulty);
+    const { data, error } = await query.order(col,{ascending:asc}).limit(10);
+    if(error || !data || data.length===0){
+      leaderboardList.innerHTML = '<div class="list-empty">No scores yet'+(game==='kart'?' at this difficulty':'')+' — be the first!</div>';
+      return;
+    }
+    leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, formatScore(game, row[col]))).join('');
+  } catch(e){
+    leaderboardList.innerHTML = '<div class="list-empty">Couldn\'t load the leaderboard right now.</div>';
   }
-  const higherIsBetter = (game==='duck' || game==='stack');
-  const table = game+'_leaderboard';
-  const col = higherIsBetter ? 'best_score' : 'best_time';
-  const asc = !higherIsBetter;
-  let query = sb.from(table).select('*');
-  if(game==='kart') query = query.eq('difficulty', difficulty);
-  const { data, error } = await query.order(col,{ascending:asc}).limit(10);
-  if(error || !data || data.length===0){
-    leaderboardList.innerHTML = '<div class="list-empty">No scores yet'+(game==='kart'?' at this difficulty':'')+' — be the first!</div>';
-    return;
-  }
-  leaderboardList.innerHTML = data.map((row,i)=> lbRow(i, row.username, formatScore(game, row[col]))).join('');
 }
 
 function showLeaderboard(game, difficulty){
