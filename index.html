@@ -2356,7 +2356,7 @@ const Stack = (function(){
   const RANGE = 170;
 
   let stack = [], fallingPieces = [], moving = null;
-  let score = 0, best = 0, runState = 'playing', perfectFlash = 0;
+  let score = 0, best = 0, runState = 'playing', perfectFlash = 0, speedMult = 1;
 
   function hueAt(i){ return (140 + i*7) % 360; }
 
@@ -2367,7 +2367,7 @@ const Stack = (function(){
     const sign = Math.random()<0.5 ? -1 : 1;
     moving = {
       z, wx: top.wx, wy: top.wy, axis, dir: sign,
-      speed: 90 + Math.min(score*3, 160),
+      speed: 90 * speedMult,
       cx: top.cx + (axis==='x' ? sign*RANGE : 0),
       cy: top.cy + (axis==='y' ? sign*RANGE : 0)
     };
@@ -2379,6 +2379,7 @@ const Stack = (function(){
     score = 0;
     runState = 'playing';
     perfectFlash = 0;
+    speedMult = 1;
     spawnMoving();
   }
 
@@ -2448,6 +2449,7 @@ const Stack = (function(){
 
     stack.push(placed);
     score++;
+    speedMult *= 1.03;
 
     if(placed.wx < MIN_SURVIVABLE || placed.wy < MIN_SURVIVABLE){
       moving = null;
